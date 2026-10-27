@@ -904,7 +904,7 @@ public class WorkflowExecuteThread {
     /**
      * init task queue
      */
-    private void initTaskQueue() {
+    private void initTaskQueue() throws Exception {
 
         taskFailedSubmit = false;
         activeTaskProcessorMaps.clear();
@@ -932,6 +932,22 @@ public class WorkflowExecuteThread {
                 if (task.isTaskComplete()) {
                     completeTaskMap.put(task.getTaskCode(), task.getId());
                     continue;
+                }
+                if (task.getState() == ExecutionStatus.RUNNING_EXECUTION
+                        || task.getState() == ExecutionStatus.DELAY_EXECUTION
+                        || task.getState() == ExecutionStatus.DISPATCH) {
+                    ITaskProcessor processor = TaskProcessorFactory.getTaskProcessor(task.getTaskType());
+                    if (Constants.COMMON_TASK_TYPE.equalsIgnoreCase(processor.getType())) {
+                        // The worker already owns this attempt. Reattach its callback and
+                        // checks without SUBMIT/DISPATCH or reacquiring its task-group slot.
+                        processService.packageTaskInstance(task, processInstance);
+                        processor.init(task, processInstance);
+                        activeTaskProcessorMaps.put(task.getTaskCode(), processor);
+                        notifyProcessHostUpdate(task);
+                        stateWheelExecuteThread.addTask4TimeoutCheck(processInstance, task);
+                        stateWheelExecuteThread.addTask4StateCheck(processInstance, task);
+                        continue;
+                    }
                 }
                 if (task.isConditionsTask() || DagHelper.haveConditionsAfterNode(Long.toString(task.getTaskCode()), dag)) {
                     continue;
@@ -1613,7 +1629,9 @@ public class WorkflowExecuteThread {
         }
 
         // success
-        if (state == ExecutionStatus.RUNNING_EXECUTION) {
+        if (state == ExecutionStatus.RUNNING_EXECUTION
+                || (state == ExecutionStatus.SUBMITTED_SUCCESS
+                    && processInstance.getCommandType() == CommandType.RECOVER_TOLERANCE_FAULT_PROCESS)) {
             List<TaskInstance> killTasks = getCompleteTaskByState(ExecutionStatus.KILL);
             if (readyToSubmitTaskQueue.size() > 0 || waitToRetryTaskInstanceMap.size() > 0) {
                 //tasks currently pending submission, no retries, indicating that depend is waiting to complete
@@ -1970,7 +1988,10 @@ public class WorkflowExecuteThread {
      * is new process instance
      */
     private boolean isNewProcessInstance() {
-        if (ExecutionStatus.RUNNING_EXECUTION == processInstance.getState() && processInstance.getRunTimes() == 1) {
+        if (ExecutionStatus.RUNNING_EXECUTION == processInstance.getState()
+                && processInstance.getRunTimes() == 1
+                && processInstance.getRecovery() != Flag.YES
+                && processInstance.getCommandType() != CommandType.RECOVER_TOLERANCE_FAULT_PROCESS) {
             return true;
         } else {
             return false;
