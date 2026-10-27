@@ -404,6 +404,34 @@ public class WorkflowExecuteThread {
         }
 
         TaskInstance task = getTaskInstance(stateEvent.getTaskInstanceId());
+        if (stateEvent.getExecutionStatus() == ExecutionStatus.NEED_FAULT_TOLERANCE) {
+            // Failover events bypass the worker-response cache refresh. Reload on the
+            // workflow event thread; never overwrite a newer attempt with an old event.
+            Integer validTaskId = validTaskMap.get(task.getTaskCode());
+            if (validTaskId == null || validTaskId != task.getId()) {
+                return true;
+            }
+            if (waitToRetryTaskInstanceMap.containsKey(task.getTaskCode())) {
+                return true;
+            }
+            for (Iterator<TaskInstance> queued = readyToSubmitTaskQueue.iterator(); queued.hasNext();) {
+                if (queued.next().getTaskCode() == task.getTaskCode()) {
+                    return true;
+                }
+            }
+            TaskInstance latest = processService.findTaskInstanceById(task.getId());
+            if (latest == null) {
+                logger.error("cannot reload failover task, processInstanceId:{}, taskInstanceId:{}",
+                        processInstance.getId(), task.getId());
+                return true;
+            }
+            if (latest.getFlag() != Flag.YES) {
+                return true;
+            }
+            processService.packageTaskInstance(latest, processInstance);
+            taskInstanceMap.put(latest.getId(), latest);
+            task = latest;
+        }
         if (task.getState() == null) {
             logger.error("task state is null, state handler error: {}", stateEvent);
             return true;

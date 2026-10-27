@@ -413,6 +413,17 @@ public class MasterRegistryClient {
                 if (taskInstance.getState().typeIsFinished()) {
                     continue;
                 }
+                // Master-side tasks do not appear in the worker registry. A healthy
+                // current-generation master must not mark its own dependency/subflow
+                // tasks as failed merely because their host is absent from workers.
+                if (serverStartupTime != null && processInstance.getRestartTime() != null
+                        && processInstance.getRestartTime().after(serverStartupTime)
+                        && masterHost.equals(taskInstance.getHost())
+                        && (taskInstance.isDependTask() || taskInstance.isSubProcess()
+                            || taskInstance.isConditionsTask() || taskInstance.isSwitchTask()
+                            || taskInstance.isBlockingTask())) {
+                    continue;
+                }
                 if (!checkTaskInstanceNeedFailover(workerServers, taskInstance)) {
                     continue;
                 }

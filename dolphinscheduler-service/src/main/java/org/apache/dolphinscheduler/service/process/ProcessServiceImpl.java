@@ -326,9 +326,12 @@ public class ProcessServiceImpl implements ProcessService {
         } else if (processDefinition.getExecutionType().typeIsSerialDiscard()) {
             List<ProcessInstance> runningProcessInstances = this.processInstanceMapper.queryByProcessDefineCodeAndStatusAndNextId(processInstance.getProcessDefinitionCode(),
                 Constants.RUNNING_PROCESS_STATE, processInstance.getId());
+            logger.info("running process instances: {}", runningProcessInstances);
             if (CollectionUtils.isNotEmpty(runningProcessInstances)) {
+                logger.info("stop running process instance: {}", processInstance);
                 processInstance.setState(ExecutionStatus.STOP);
                 saveProcessInstance(processInstance);
+                return;
             }
             processInstance.setState(ExecutionStatus.SUBMITTED_SUCCESS);
             saveProcessInstance(processInstance);

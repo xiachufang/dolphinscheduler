@@ -18,6 +18,7 @@
 package org.apache.dolphinscheduler.server.master.runner.task;
 
 import org.apache.dolphinscheduler.common.Constants;
+import org.apache.dolphinscheduler.dao.entity.TaskInstance;
 import org.apache.dolphinscheduler.plugin.task.api.TaskExecutionContext;
 import org.apache.dolphinscheduler.plugin.task.api.enums.ExecutionStatus;
 import org.apache.dolphinscheduler.remote.command.TaskKillRequestCommand;
@@ -136,10 +137,22 @@ public class CommonTaskProcessor extends BaseTaskProcessor {
     public boolean killTask() {
 
         try {
-            taskInstance = processService.findTaskInstanceById(taskInstance.getId());
-            if (taskInstance == null) {
-                return true;
+            TaskInstance latest = processService.findTaskInstanceById(taskInstance.getId());
+            if (latest == null) {
+                logger.warn("cannot stop missing task instance, taskInstanceId:{}", taskInstance.getId());
+                return false;
             }
+            // Database rows do not contain the definition/context used by state-wheel checks.
+            if (taskInstance.getTaskDefine() != null
+                    && taskInstance.getTaskCode() == latest.getTaskCode()
+                    && taskInstance.getTaskDefinitionVersion() == latest.getTaskDefinitionVersion()) {
+                latest.setTaskDefine(taskInstance.getTaskDefine());
+                latest.setProcessDefine(taskInstance.getProcessDefine());
+                latest.setProcessInstance(processInstance);
+            } else {
+                processService.packageTaskInstance(latest, processInstance);
+            }
+            taskInstance = latest;
             if (taskInstance.getState().typeIsFinished()) {
                 return true;
             }
