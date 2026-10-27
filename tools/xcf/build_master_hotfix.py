@@ -4,6 +4,7 @@
 No server access or deployment is performed. All inputs must be local copies.
 """
 import argparse
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -64,7 +65,7 @@ def main():
             metadata['replaced_entries'] = sorted(generated)
             with zipfile.ZipFile(args.output, 'w') as new:
                 for entry in old.infolist():
-                    new.writestr(entry, generated.get(entry.filename, old.read(entry.filename)))
+                    new.writestr(copy.copy(entry), generated.get(entry.filename, old.read(entry.filename)))
                 info = zipfile.ZipInfo('META-INF/xcf-hotfix.json', (2026, 10, 27, 0, 0, 0))
                 new.writestr(info, json.dumps(metadata, indent=2, sort_keys=True) + '\n')
             with zipfile.ZipFile(args.output) as new:
